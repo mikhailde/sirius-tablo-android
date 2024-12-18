@@ -20,7 +20,7 @@
         <service android:name="com.example.tabloapp.service.mqtt.MqttService"/>
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.features.main.view.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.TabloApp">
             <intent-filter>

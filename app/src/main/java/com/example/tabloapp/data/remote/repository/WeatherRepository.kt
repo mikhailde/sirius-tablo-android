@@ -1,4 +1,4 @@
-package com.example.tabloapp.data.repository
+package com.example.tabloapp.data.remote.repository
 
 import com.example.tabloapp.data.model.WeatherData
 import com.example.tabloapp.data.remote.api.WeatherApi
@@ -16,7 +16,7 @@ class WeatherRepository {
                 WeatherData(
                     temperature = it.fact.temp,
                     condition = it.fact.condition,
-                    icon = "https://yastatic.net/weather/i/icons/funky/dark/${it.fact.icon}.svg"
+                    icon = it.fact.icon.substringAfterLast("/").substringBefore(".svg") // Извлекаем имя иконки
                 )
             }
         } else {

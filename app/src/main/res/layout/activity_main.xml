@@ -6,7 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/black"
-    tools:context=".MainActivity">
+    tools:context=".ui.features.main.view.MainActivity">
 
     <TextView
         android:id="@+id/timeTextView"
@@ -43,15 +43,14 @@
         app:layout_constraintTop_toBottomOf="@+id/dateTextView"
         tools:text="Пн" />
 
-    <WebView
+    <ImageView
         android:id="@+id/weatherIconImageView"
-        android:layout_width="64dp"
-        android:layout_height="64dp"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
         android:layout_marginTop="16dp"
-        android:layout_marginEnd="16dp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:ignore="WebViewLayout" />
+        app:layout_constraintTop_toBottomOf="@+id/dayOfWeekTextView"
+        app:layout_constraintStart_toEndOf="@+id/temperatureTextView"
+        android:layout_marginStart="8dp"/>
 
     <TextView
         android:id="@+id/temperatureTextView"
