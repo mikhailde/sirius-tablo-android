@@ -17,7 +17,7 @@ class MqttService(private val context: Context, private val messageListener: Mqt
         .useMqttVersion3()
         .buildAsync()
 
-    private val topic = "device/tablo_01/command"
+    private val topic = "device/1/command"
 
     fun connect() {
         client.connectWith()
