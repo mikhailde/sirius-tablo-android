@@ -4,6 +4,7 @@ import android.graphics.drawable.PictureDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.StatFs
 import android.util.Log
 import android.widget.ImageView
 import android.widget.TextView
@@ -12,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.caverock.androidsvg.SVG
 import com.example.tabloapp.BuildConfig
 import com.example.tabloapp.R
+import com.example.tabloapp.data.model.DeviceStatus
 import com.example.tabloapp.data.remote.repository.WeatherRepository
 import com.example.tabloapp.service.mqtt.MqttService
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +26,11 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
+
+    companion object {
+        private const val API_KEY = "your_api_key_here" // Замени на свой API ключ
+        private const val DEVICE_ID = "1"
+    }
 
     private val weatherRepository = WeatherRepository()
     private lateinit var mqttService: MqttService
@@ -41,6 +48,28 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
     // Handlers
     private val handler = Handler(Looper.getMainLooper())
 
+    private val conditionTranslations = mapOf(
+        "clear" to "Ясно",
+        "partly-cloudy" to "Малооблачно",
+        "cloudy" to "Облачно с прояснениями",
+        "overcast" to "Пасмурно",
+        "drizzle" to "Морось",
+        "light-rain" to "Небольшой дождь",
+        "rain" to "Дождь",
+        "moderate-rain" to "Умеренно сильный дождь",
+        "heavy-rain" to "Сильный дождь",
+        "continuous-heavy-rain" to "Длительный сильный дождь",
+        "showers" to "Ливень",
+        "wet-snow" to "Дождь со снегом",
+        "light-snow" to "Небольшой снег",
+        "snow" to "Снег",
+        "snow-showers" to "Снегопад",
+        "hail" to "Град",
+        "thunderstorm" to "Гроза",
+        "thunderstorm-with-rain" to "Дождь с грозой",
+        "thunderstorm-with-hail" to "Гроза с градом"
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -51,6 +80,7 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
 
         handler.post(updateTimeRunnable)
         handler.post(updateWeatherRunnable)
+        handler.post(sendStatusRunnable)
     }
 
     override fun onMessageReceived(message: String) {
@@ -74,8 +104,32 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
         }
     }
 
+    private val sendStatusRunnable = object : Runnable {
+        override fun run() {
+            val status = "online"
+            val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+            val message = messageTextView.text.toString()
+            val brightness = 50 // Замени на реальное значение
+            val temperature = 25 // Замени на реальное значение
+            val freeSpace = getFreeSpace()
+            val uptime = android.os.SystemClock.elapsedRealtime() / 1000
+
+            // Передаем API_KEY как последний аргумент
+            val deviceStatus = DeviceStatus(DEVICE_ID, status, currentTime, message, brightness, temperature, freeSpace, uptime, API_KEY)
+            mqttService.publishDeviceStatus(deviceStatus)
+
+            handler.postDelayed(this, 30000) // Update every 30 seconds
+        }
+    }
+
+    private fun getFreeSpace(): Long {
+        val stat = StatFs(cacheDir.absolutePath)
+        return stat.availableBlocksLong * stat.blockSizeLong / (1024 * 1024) // Free space in MB
+    }
+
     private fun updateDateTime() {
-        val currentDateTime = SimpleDateFormat("HH:mm dd.MM.yyyy EE", Locale.getDefault()).format(Date())
+        val russianLocale = Locale("ru", "RU")
+        val currentDateTime = SimpleDateFormat("HH:mm dd.MM.yyyy EE", russianLocale).format(Date())
         timeTextView.text = currentDateTime.substringBefore(" ")
         dateTextView.text = currentDateTime.substringAfter(" ").substringBeforeLast(" ")
         dayOfWeekTextView.text = currentDateTime.substringAfterLast(" ")
@@ -89,7 +143,6 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
                 )
                 Log.d("IconValue", weatherData?.icon ?: "Icon is null")
 
-                // Загрузка SVG и установка в ImageView в фоновом потоке
                 withContext(Dispatchers.IO) {
                     val pictureDrawable = loadSvgFromUrl(weatherData?.icon)
                     withContext(Dispatchers.Main) {
@@ -98,8 +151,8 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
                 }
 
                 temperatureTextView.text = getString(R.string.temperature_celsius, weatherData?.temperature ?: "")
-                weatherDescriptionTextView.text = weatherData?.condition ?: ""
-                trafficTextView.text = getString(R.string.traffic_placeholder) // Consider fetching traffic data
+                weatherDescriptionTextView.text = conditionTranslations[weatherData?.condition] ?: weatherData?.condition ?: ""
+                trafficTextView.text = getString(R.string.traffic_placeholder)
             } catch (e: Exception) {
                 Log.e("MainActivity", "Failed to fetch weather data: ${e.message}")
             }
