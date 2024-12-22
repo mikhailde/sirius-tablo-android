@@ -1,5 +1,6 @@
 package com.example.tabloapp.ui.features.main.view
 
+import android.text.Html
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.Handler
@@ -80,7 +81,11 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
 
     override fun onMessageReceived(message: String) {
         runOnUiThread {
-            messageTextView.text = message
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                messageTextView.text = Html.fromHtml(message.replace("\n", "<br>"), Html.FROM_HTML_MODE_COMPACT)
+            } else {
+                messageTextView.text = Html.fromHtml(message.replace("\n", "<br>"))
+            }
             messageTextView.isSelected = true // Enable marquee effect for long messages
         }
     }
