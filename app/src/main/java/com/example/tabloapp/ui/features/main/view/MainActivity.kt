@@ -1,6 +1,6 @@
 package com.example.tabloapp.ui.features.main.view
 
-import android.graphics.drawable.PictureDrawable
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,8 +10,6 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
-import com.caverock.androidsvg.SVG
-import com.example.tabloapp.BuildConfig
 import com.example.tabloapp.R
 import com.example.tabloapp.data.model.DeviceStatus
 import com.example.tabloapp.data.remote.repository.WeatherRepository
@@ -19,8 +17,6 @@ import com.example.tabloapp.service.mqtt.MqttService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.InputStream
-import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -28,7 +24,6 @@ import java.util.Locale
 class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
 
     companion object {
-        private const val API_KEY = "your_api_key_here" // Замени на свой API ключ
         private const val DEVICE_ID = "1"
     }
 
@@ -114,8 +109,7 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
             val freeSpace = getFreeSpace()
             val uptime = android.os.SystemClock.elapsedRealtime() / 1000
 
-            // Передаем API_KEY как последний аргумент
-            val deviceStatus = DeviceStatus(DEVICE_ID, status, currentTime, message, brightness, temperature, freeSpace, uptime, API_KEY)
+            val deviceStatus = DeviceStatus(DEVICE_ID, status, currentTime, message, brightness, temperature, freeSpace, uptime)
             mqttService.publishDeviceStatus(deviceStatus)
 
             handler.postDelayed(this, 30000) // Update every 30 seconds
@@ -138,16 +132,13 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
     private fun fetchWeatherData() {
         lifecycleScope.launch {
             try {
-                val weatherData = weatherRepository.getWeatherData(
-                    43.40, 39.96, BuildConfig.YANDEX_WEATHER_API_KEY
-                )
+                val weatherData = weatherRepository.getWeatherData()
                 Log.d("IconValue", weatherData?.icon ?: "Icon is null")
 
-                withContext(Dispatchers.IO) {
-                    val pictureDrawable = loadSvgFromUrl(weatherData?.icon)
-                    withContext(Dispatchers.Main) {
-                        weatherIconImageView.setImageDrawable(pictureDrawable)
-                    }
+                withContext(Dispatchers.Main) {
+                    val iconName = weatherData?.icon?.replace("-", "_")?.replace("+", "_")
+                    val drawable = getLocalSvg(iconName)
+                    weatherIconImageView.setImageDrawable(drawable)
                 }
 
                 temperatureTextView.text = getString(R.string.temperature_celsius, weatherData?.temperature ?: "")
@@ -159,15 +150,19 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
         }
     }
 
-    private fun loadSvgFromUrl(iconUrl: String?): PictureDrawable? {
-        iconUrl ?: return null
+    private fun getLocalSvg(iconName: String?): Drawable? {
+        if (iconName == null) return null
 
         return try {
-            val inputStream: InputStream = URL(iconUrl).openStream()
-            val svg = SVG.getFromInputStream(inputStream)
-            PictureDrawable(svg.renderToPicture())
+            val resourceId = resources.getIdentifier(iconName, "drawable", packageName)
+            if (resourceId != 0) {
+                resources.getDrawable(resourceId, theme)
+            } else {
+                Log.w("MainActivity", "Icon not found in resources: $iconName")
+                null
+            }
         } catch (e: Exception) {
-            Log.e("MainActivity", "Error loading SVG from URL: ${e.message}")
+            Log.e("MainActivity", "Error loading SVG from resources: ${e.message}")
             null
         }
     }

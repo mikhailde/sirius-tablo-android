@@ -9,5 +9,4 @@ data class DeviceStatus(
     val temperature: Int,
     val free_space: Long,
     val uptime: Long,
-    val api_key: String? = null // Поле api_key должно быть опциональным
-)
+    )

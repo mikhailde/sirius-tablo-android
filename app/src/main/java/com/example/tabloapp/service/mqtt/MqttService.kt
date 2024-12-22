@@ -9,53 +9,77 @@ import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient
 import com.hivemq.client.mqtt.mqtt3.message.connect.connack.Mqtt3ConnAck
 import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish
 import java.util.UUID
+import com.hivemq.client.mqtt.mqtt3.message.subscribe.suback.Mqtt3SubAck
+import com.hivemq.client.mqtt.datatypes.MqttQos
 
 class MqttService(private val context: Context, private val messageListener: MqttMessageListener) {
 
     companion object {
         private const val TAG = "MqttService"
+        private const val SERVER_HOST = "10.0.2.2"
+        private const val SERVER_PORT = 1883
+        private const val CLIENT_ID_PREFIX = "tablo-android-"
+        private const val COMMAND_TOPIC_FORMAT = "device/%s/command"
+        private const val STATUS_TOPIC_FORMAT = "device/%s/status"
     }
 
     private val client: Mqtt3AsyncClient = MqttClient.builder()
-        .identifier(UUID.randomUUID().toString())
-        .serverHost("10.0.2.2") // Замените на адрес вашего MQTT брокера
-        .serverPort(1883)
+        .identifier(CLIENT_ID_PREFIX + UUID.randomUUID().toString())
+        .serverHost(SERVER_HOST)
+        .serverPort(SERVER_PORT)
         .useMqttVersion3()
         .buildAsync()
 
-    private val commandTopic = "device/1/command"
-    private val statusTopic = "device/1/status" // Топик для отправки статуса
+    private lateinit var commandTopic: String
+    private lateinit var statusTopic: String
 
-    fun connect() {
+    fun connect(deviceId: String = "1") {
+        commandTopic = String.format(COMMAND_TOPIC_FORMAT, deviceId)
+        statusTopic = String.format(STATUS_TOPIC_FORMAT, deviceId)
+
         client.connectWith()
+            .simpleAuth()
+            .username("your_username")
+            .password("your_password".toByteArray())
+            .applySimpleAuth()
             .send()
             .whenComplete { connAck: Mqtt3ConnAck, throwable: Throwable? ->
-                if (throwable != null) {
-                    Log.e(TAG, "Connection failure: ${throwable.message}", throwable)
-                } else {
-                    Log.d(TAG, "Connection success: ${connAck.returnCode}")
-                    subscribeToTopic()
-                }
+                handleConnectionResult(connAck, throwable)
             }
     }
 
-    private fun subscribeToTopic() {
+    private fun handleConnectionResult(connAck: Mqtt3ConnAck, throwable: Throwable?) {
+        if (throwable != null) {
+            Log.e(TAG, "Connection failure: ${throwable.message}", throwable)
+        } else {
+            Log.d(TAG, "Connection success: ${connAck.returnCode}")
+            subscribeToCommandTopic()
+        }
+    }
+
+    private fun subscribeToCommandTopic() {
         client.subscribeWith()
             .topicFilter(commandTopic)
-            .qos(com.hivemq.client.mqtt.datatypes.MqttQos.AT_LEAST_ONCE)
-            .callback { publish: Mqtt3Publish ->
-                val message = String(publish.payloadAsBytes)
-                Log.d(TAG, "Message received on topic '$commandTopic': $message")
-                messageListener.onMessageReceived(message)
-            }
+            .qos(MqttQos.AT_LEAST_ONCE)
+            .callback(::handleIncomingMessage)
             .send()
-            .whenComplete { subAck, throwable ->
-                if (throwable != null) {
-                    Log.e(TAG, "Failed to subscribe to topic: $commandTopic", throwable)
-                } else {
-                    Log.i(TAG, "Subscribed to topic: $commandTopic")
-                }
+            .whenComplete { subAck: Mqtt3SubAck, throwable: Throwable? ->
+                handleSubscriptionResult(subAck, throwable)
             }
+    }
+
+    private fun handleIncomingMessage(publish: Mqtt3Publish) {
+        val message = String(publish.payloadAsBytes)
+        Log.d(TAG, "Message received on topic '$commandTopic': $message")
+        messageListener.onMessageReceived(message)
+    }
+
+    private fun handleSubscriptionResult(subAck: Mqtt3SubAck, throwable: Throwable?) {
+        if (throwable != null) {
+            Log.e(TAG, "Failed to subscribe to topic: $commandTopic", throwable)
+        } else {
+            Log.i(TAG, "Subscribed to topic: $commandTopic")
+        }
     }
 
     fun disconnect() {
@@ -69,15 +93,14 @@ class MqttService(private val context: Context, private val messageListener: Mqt
             }
     }
 
-    // Функция для публикации статуса устройства
     fun publishDeviceStatus(deviceStatus: DeviceStatus) {
         val payload = Gson().toJson(deviceStatus)
         client.publishWith()
             .topic(statusTopic)
             .payload(payload.toByteArray())
-            .qos(com.hivemq.client.mqtt.datatypes.MqttQos.AT_LEAST_ONCE)
+            .qos(MqttQos.AT_LEAST_ONCE)
             .send()
-            .whenComplete { publishResult, throwable ->
+            .whenComplete { _, throwable ->
                 if (throwable != null) {
                     Log.e(TAG, "Failed to publish device status", throwable)
                 } else {
