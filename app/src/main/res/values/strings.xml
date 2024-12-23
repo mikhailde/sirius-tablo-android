@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">TabloApp</string>
-    <string name="temperature_celsius">%d°C</string>
-    <string name="weather_icon">Weather Icon</string>
-    <string name="traffic_placeholder">Пробки: 5 баллов</string>
+    <string name="temperature_celsius">%s°C</string>
+    <string name="weather_icon">Иконка погоды</string>
+    <string name="data_unavailable">Данные временно недоступны</string>
+    <string name="welcome_message">Добро пожаловать на Федеральную Территорию \'Сириус\'!</string>
 </resources>

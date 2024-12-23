@@ -1,15 +1,14 @@
 package com.example.tabloapp.ui.features.main.view
 
-import android.text.Html
-import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
 import android.util.Log
-import android.widget.ImageView
 import android.widget.TextView
+import android.widget.ImageView
 import androidx.activity.ComponentActivity
+import androidx.core.text.HtmlCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.tabloapp.R
 import com.example.tabloapp.data.model.DeviceStatus
@@ -21,28 +20,41 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.provider.Settings
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 
-class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
+class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, SensorEventListener {
 
     companion object {
         private const val DEVICE_ID = "1"
+        private const val WEATHER_UPDATE_INTERVAL_MS = 90 * 60 * 1000L
+        private const val STATUS_UPDATE_INTERVAL_MS = 30 * 1000L
     }
 
     private val weatherRepository = WeatherRepository()
     private lateinit var mqttService: MqttService
-    private lateinit var weatherIconImageView: ImageView
+    private lateinit var sensorManager: SensorManager
+    private var lightSensor: Sensor? = null
+    private var temperatureSensor: Sensor? = null
 
     // UI elements
     private val timeTextView: TextView by lazy { findViewById(R.id.timeTextView) }
     private val dateTextView: TextView by lazy { findViewById(R.id.dateTextView) }
     private val dayOfWeekTextView: TextView by lazy { findViewById(R.id.dayOfWeekTextView) }
     private val temperatureTextView: TextView by lazy { findViewById(R.id.temperatureTextView) }
-    private val weatherDescriptionTextView: TextView by lazy { findViewById(R.id.weatherDescriptionTextView) }
     private val messageTextView: TextView by lazy { findViewById(R.id.messageTextView) }
-    private val trafficTextView: TextView by lazy { findViewById(R.id.trafficTextView) }
+    private val weatherIconImageView: ImageView by lazy { findViewById(R.id.weatherIconImageView) }
 
     // Handlers
     private val handler = Handler(Looper.getMainLooper())
+
+    // Sensor values
+    private var currentBrightness: Float = 0f
+    private var currentTemperature: Float = 0f
 
     private val conditionTranslations = mapOf(
         "clear" to "Ясно",
@@ -70,9 +82,16 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        weatherIconImageView = findViewById(R.id.weatherIconImageView)
         mqttService = MqttService(applicationContext, this)
         mqttService.connect()
+        messageTextView.text = getString(R.string.welcome_message)
+
+        // Активируем marquee эффект
+        messageTextView.isSelected = true
+
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
+        temperatureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE)
 
         handler.post(updateTimeRunnable)
         handler.post(updateWeatherRunnable)
@@ -81,49 +100,67 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
 
     override fun onMessageReceived(message: String) {
         runOnUiThread {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                messageTextView.text = Html.fromHtml(message.replace("\n", "<br>"), Html.FROM_HTML_MODE_COMPACT)
+            val formattedMessage = message.replace("\n", "<br>")
+            messageTextView.text = HtmlCompat.fromHtml(formattedMessage, HtmlCompat.FROM_HTML_MODE_COMPACT)
+            messageTextView.isSelected = true // Повторная установка selected после обновления текста
+
+            // Проверка длины текста и установка singleLine и ellipsize в зависимости от неё
+            if (formattedMessage.length > 50) {
+                messageTextView.setSingleLine(true)
+                messageTextView.ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
             } else {
-                messageTextView.text = Html.fromHtml(message.replace("\n", "<br>"))
+                messageTextView.setSingleLine(false)
+                messageTextView.ellipsize = null
             }
-            messageTextView.isSelected = true // Enable marquee effect for long messages
         }
     }
 
     private val updateTimeRunnable = object : Runnable {
         override fun run() {
             updateDateTime()
-            handler.postDelayed(this, 1000) // Update every second
+            handler.postDelayed(this, 1000)
         }
     }
 
     private val updateWeatherRunnable = object : Runnable {
         override fun run() {
             fetchWeatherData()
-            handler.postDelayed(this, 90 * 60 * 1000) // Update every 90 minutes
+            handler.postDelayed(this, WEATHER_UPDATE_INTERVAL_MS)
         }
     }
 
     private val sendStatusRunnable = object : Runnable {
         override fun run() {
-            val status = "online"
-            val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-            val message = messageTextView.text.toString()
-            val brightness = 50 // Замени на реальное значение
-            val temperature = 25 // Замени на реальное значение
-            val freeSpace = getFreeSpace()
-            val uptime = android.os.SystemClock.elapsedRealtime() / 1000
-
-            val deviceStatus = DeviceStatus(DEVICE_ID, status, currentTime, message, brightness, temperature, freeSpace, uptime)
-            mqttService.publishDeviceStatus(deviceStatus)
-
-            handler.postDelayed(this, 30000) // Update every 30 seconds
+            sendStatusUpdate()
+            handler.postDelayed(this, STATUS_UPDATE_INTERVAL_MS)
         }
+    }
+
+    private fun sendStatusUpdate() {
+        val status = "online"
+        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val message = messageTextView.text.toString()
+        val brightness = currentBrightness.toInt()
+        val temperature = currentTemperature.toInt()
+        val freeSpace = getFreeSpace()
+        val uptime = android.os.SystemClock.elapsedRealtime() / 1000
+
+        val deviceStatus = DeviceStatus(
+            DEVICE_ID,
+            status,
+            currentTime,
+            message,
+            brightness,
+            temperature,
+            freeSpace,
+            uptime
+        )
+        mqttService.publishDeviceStatus(deviceStatus)
     }
 
     private fun getFreeSpace(): Long {
         val stat = StatFs(cacheDir.absolutePath)
-        return stat.availableBlocksLong * stat.blockSizeLong / (1024 * 1024) // Free space in MB
+        return stat.availableBlocksLong * stat.blockSizeLong / (1024 * 1024)
     }
 
     private fun updateDateTime() {
@@ -138,38 +175,45 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener {
         lifecycleScope.launch {
             try {
                 val weatherData = weatherRepository.getWeatherData()
-                Log.d("IconValue", weatherData?.icon ?: "Icon is null")
-
                 withContext(Dispatchers.Main) {
                     val iconName = weatherData?.icon?.replace("-", "_")?.replace("+", "_")
-                    val drawable = getLocalSvg(iconName)
-                    weatherIconImageView.setImageDrawable(drawable)
+                    val icon = resources.getIdentifier(iconName, "drawable", packageName)
+                    weatherIconImageView.setImageResource(icon)
+                    temperatureTextView.text =
+                        getString(R.string.temperature_celsius, weatherData?.temperature ?: "")
                 }
-
-                temperatureTextView.text = getString(R.string.temperature_celsius, weatherData?.temperature ?: "")
-                weatherDescriptionTextView.text = conditionTranslations[weatherData?.condition] ?: weatherData?.condition ?: ""
-                trafficTextView.text = getString(R.string.traffic_placeholder)
             } catch (e: Exception) {
                 Log.e("MainActivity", "Failed to fetch weather data: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    messageTextView.text = getString(R.string.data_unavailable)
+                }
             }
         }
     }
 
-    private fun getLocalSvg(iconName: String?): Drawable? {
-        if (iconName == null) return null
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Not used
+    }
 
-        return try {
-            val resourceId = resources.getIdentifier(iconName, "drawable", packageName)
-            if (resourceId != 0) {
-                resources.getDrawable(resourceId, theme)
-            } else {
-                Log.w("MainActivity", "Icon not found in resources: $iconName")
-                null
-            }
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error loading SVG from resources: ${e.message}")
-            null
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event?.sensor?.type == Sensor.TYPE_LIGHT) {
+            currentBrightness = event.values[0]
+            Log.d("Sensor", "Light: ${event.values[0]}")
+        } else if (event?.sensor?.type == Sensor.TYPE_AMBIENT_TEMPERATURE) {
+            currentTemperature = event.values[0]
+            Log.d("Sensor", "Temperature: ${event.values[0]}")
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lightSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        temperatureSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sensorManager.unregisterListener(this)
     }
 
     override fun onDestroy() {
