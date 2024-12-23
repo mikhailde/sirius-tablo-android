@@ -1,10 +1,14 @@
 package com.example.tabloapp.ui.features.main.view
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
+import android.util.Base64
 import android.util.Log
+import android.view.View
 import android.widget.TextView
 import android.widget.ImageView
 import androidx.activity.ComponentActivity
@@ -22,6 +26,7 @@ import java.util.Date
 import java.util.Locale
 import android.provider.Settings
 import android.content.Context
+import android.graphics.drawable.Drawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -48,6 +53,7 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, Senso
     private val temperatureTextView: TextView by lazy { findViewById(R.id.temperatureTextView) }
     private val messageTextView: TextView by lazy { findViewById(R.id.messageTextView) }
     private val weatherIconImageView: ImageView by lazy { findViewById(R.id.weatherIconImageView) }
+    private val contentImageView: ImageView by lazy { findViewById(R.id.contentImageView) }
 
     // Handlers
     private val handler = Handler(Looper.getMainLooper())
@@ -55,28 +61,6 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, Senso
     // Sensor values
     private var currentBrightness: Float = 0f
     private var currentTemperature: Float = 0f
-
-    private val conditionTranslations = mapOf(
-        "clear" to "Ясно",
-        "partly-cloudy" to "Малооблачно",
-        "cloudy" to "Облачно с прояснениями",
-        "overcast" to "Пасмурно",
-        "drizzle" to "Морось",
-        "light-rain" to "Небольшой дождь",
-        "rain" to "Дождь",
-        "moderate-rain" to "Умеренно сильный дождь",
-        "heavy-rain" to "Сильный дождь",
-        "continuous-heavy-rain" to "Длительный сильный дождь",
-        "showers" to "Ливень",
-        "wet-snow" to "Дождь со снегом",
-        "light-snow" to "Небольшой снег",
-        "snow" to "Снег",
-        "snow-showers" to "Снегопад",
-        "hail" to "Град",
-        "thunderstorm" to "Гроза",
-        "thunderstorm-with-rain" to "Дождь с грозой",
-        "thunderstorm-with-hail" to "Гроза с градом"
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,18 +84,46 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, Senso
 
     override fun onMessageReceived(message: String) {
         runOnUiThread {
-            val formattedMessage = message.replace("\n", "<br>")
-            messageTextView.text = HtmlCompat.fromHtml(formattedMessage, HtmlCompat.FROM_HTML_MODE_COMPACT)
-            messageTextView.isSelected = true // Повторная установка selected после обновления текста
-
-            // Проверка длины текста и установка singleLine и ellipsize в зависимости от неё
-            if (formattedMessage.length > 50) {
-                messageTextView.setSingleLine(true)
-                messageTextView.ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+            if (message.startsWith("IMAGE:")) {
+                val base64Image = message.substringAfter("IMAGE:")
+                displayImage(base64Image)
             } else {
-                messageTextView.setSingleLine(false)
-                messageTextView.ellipsize = null
+                displayText(message)
             }
+        }
+    }
+
+    private fun displayImage(base64Image: String) {
+        try {
+            val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
+            val decodedImage = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            if (decodedImage != null) {
+                contentImageView.setImageBitmap(decodedImage)
+                contentImageView.visibility = View.VISIBLE
+                messageTextView.visibility = View.GONE
+            } else {
+                Log.e("MainActivity", "Failed to decode base64 image")
+            }
+        } catch (e: IllegalArgumentException) {
+            Log.e("MainActivity", "Invalid base64 string: ${e.message}")
+        }
+    }
+
+    private fun displayText(message: String) {
+        contentImageView.visibility = View.GONE
+        messageTextView.visibility = View.VISIBLE
+
+        val formattedMessage = message.replace("\n", "<br>")
+        messageTextView.text = HtmlCompat.fromHtml(formattedMessage, HtmlCompat.FROM_HTML_MODE_COMPACT)
+        messageTextView.isSelected = true // Повторная установка selected после обновления текста
+
+        // Проверка длины текста и установка singleLine и ellipsize в зависимости от неё
+        if (formattedMessage.length > 50) {
+            messageTextView.setSingleLine(true)
+            messageTextView.ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+        } else {
+            messageTextView.setSingleLine(false)
+            messageTextView.ellipsize = null
         }
     }
 
