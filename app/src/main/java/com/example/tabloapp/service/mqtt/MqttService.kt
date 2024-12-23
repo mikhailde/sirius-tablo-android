@@ -1,6 +1,5 @@
 package com.example.tabloapp.service.mqtt
 
-import android.content.Context
 import android.util.Log
 import com.example.tabloapp.data.model.DeviceStatus
 import com.google.gson.Gson
@@ -12,7 +11,7 @@ import java.util.UUID
 import com.hivemq.client.mqtt.mqtt3.message.subscribe.suback.Mqtt3SubAck
 import com.hivemq.client.mqtt.datatypes.MqttQos
 
-class MqttService(private val context: Context, private val messageListener: MqttMessageListener) {
+class MqttService(private val messageListener: MqttMessageListener) {
 
     companion object {
         private const val TAG = "MqttService"
@@ -38,10 +37,6 @@ class MqttService(private val context: Context, private val messageListener: Mqt
         statusTopic = String.format(STATUS_TOPIC_FORMAT, deviceId)
 
         client.connectWith()
-            .simpleAuth()
-            .username("your_username")
-            .password("your_password".toByteArray())
-            .applySimpleAuth()
             .send()
             .whenComplete { connAck: Mqtt3ConnAck, throwable: Throwable? ->
                 handleConnectionResult(connAck, throwable)
@@ -63,8 +58,8 @@ class MqttService(private val context: Context, private val messageListener: Mqt
             .qos(MqttQos.AT_LEAST_ONCE)
             .callback(::handleIncomingMessage)
             .send()
-            .whenComplete { subAck: Mqtt3SubAck, throwable: Throwable? ->
-                handleSubscriptionResult(subAck, throwable)
+            .whenComplete { _: Mqtt3SubAck, throwable: Throwable? ->
+                handleSubscriptionResult(throwable)
             }
     }
 
@@ -74,7 +69,7 @@ class MqttService(private val context: Context, private val messageListener: Mqt
         messageListener.onMessageReceived(message)
     }
 
-    private fun handleSubscriptionResult(subAck: Mqtt3SubAck, throwable: Throwable?) {
+    private fun handleSubscriptionResult(throwable: Throwable?) {
         if (throwable != null) {
             Log.e(TAG, "Failed to subscribe to topic: $commandTopic", throwable)
         } else {

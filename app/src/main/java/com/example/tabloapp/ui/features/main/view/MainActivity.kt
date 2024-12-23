@@ -1,6 +1,5 @@
 package com.example.tabloapp.ui.features.main.view
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
@@ -31,6 +30,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.text.TextUtils
 
 class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, SensorEventListener {
 
@@ -66,12 +66,9 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, Senso
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        mqttService = MqttService(applicationContext, this)
+        mqttService = MqttService(this)
         mqttService.connect()
         messageTextView.text = getString(R.string.welcome_message)
-
-        // Активируем marquee эффект
-        messageTextView.isSelected = true
 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
@@ -115,16 +112,9 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, Senso
 
         val formattedMessage = message.replace("\n", "<br>")
         messageTextView.text = HtmlCompat.fromHtml(formattedMessage, HtmlCompat.FROM_HTML_MODE_COMPACT)
-        messageTextView.isSelected = true // Повторная установка selected после обновления текста
-
-        // Проверка длины текста и установка singleLine и ellipsize в зависимости от неё
-        if (formattedMessage.length > 50) {
-            messageTextView.setSingleLine(true)
-            messageTextView.ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
-        } else {
-            messageTextView.setSingleLine(false)
-            messageTextView.ellipsize = null
-        }
+        messageTextView.setSingleLine(false)
+        messageTextView.ellipsize = null
+        messageTextView.maxLines = Integer.MAX_VALUE
     }
 
     private val updateTimeRunnable = object : Runnable {
@@ -203,10 +193,6 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, Senso
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // Not used
-    }
-
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type == Sensor.TYPE_LIGHT) {
             currentBrightness = event.values[0]
@@ -215,6 +201,10 @@ class MainActivity : ComponentActivity(), MqttService.MqttMessageListener, Senso
             currentTemperature = event.values[0]
             Log.d("Sensor", "Temperature: ${event.values[0]}")
         }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Ничего не делаем, так как точность сенсора не важна в данном случае
     }
 
     override fun onResume() {
